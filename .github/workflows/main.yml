@@ -1,0 +1,187 @@
+import tkinter as tk
+import random
+
+# Constants
+WIDTH = 700
+HEIGHT = 600
+GRAVITY = 1
+JUMP_STRENGTH = -10
+PIPE_WIDTH = 50
+PIPE_SPEED = 7
+GAP_HEIGHT = 200
+TARGET_SCORE = 100  # Game completion score
+
+# Bird class
+class Bird:
+    def __init__(self, canvas):
+        self.canvas = canvas
+        self.x = 100
+        self.y = HEIGHT // 2
+        self.size = 20
+        self.velocity = 0
+        self.id = canvas.create_oval(
+            self.x - self.size, self.y - self.size,
+            self.x + self.size, self.y + self.size,
+            fill="gold", outline="black", width=2
+        )
+
+    def update(self):
+        self.velocity += GRAVITY
+        self.y += self.velocity
+        self.canvas.move(self.id, 0, self.velocity)
+        if self.y + self.size >= HEIGHT or self.y - self.size <= 0:
+            return True  # Bird hit the ground or ceiling
+        return False
+
+    def jump(self):
+        self.velocity = JUMP_STRENGTH
+
+# Pipe class
+class Pipe:
+    def __init__(self, canvas):
+        self.canvas = canvas
+        self.x = WIDTH
+        self.gap_y = random.randint(100, HEIGHT - 100)
+        self.top_pipe = canvas.create_rectangle(
+            self.x, 0,
+            self.x + PIPE_WIDTH, self.gap_y - GAP_HEIGHT // 2,
+            fill="limegreen", outline="darkgreen", width=2
+        )
+        self.bottom_pipe = canvas.create_rectangle(
+            self.x, self.gap_y + GAP_HEIGHT // 2,
+            self.x + PIPE_WIDTH, HEIGHT,
+            fill="limegreen", outline="darkgreen", width=2
+        )
+        self.scored = False
+
+    def update(self):
+        self.x -= PIPE_SPEED
+        self.canvas.move(self.top_pipe, -PIPE_SPEED, 0)
+        self.canvas.move(self.bottom_pipe, -PIPE_SPEED, 0)
+        if self.x + PIPE_WIDTH < 0:
+            self.canvas.delete(self.top_pipe)
+            self.canvas.delete(self.bottom_pipe)
+            return True  # Remove pipe when it goes off-screen
+        return False
+
+    def collides_with(self, bird):
+        bird_coords = self.canvas.bbox(bird.id)
+        top_coords = self.canvas.bbox(self.top_pipe)
+        bottom_coords = self.canvas.bbox(self.bottom_pipe)
+        return (
+            self.overlap(bird_coords, top_coords) or
+            self.overlap(bird_coords, bottom_coords)
+        )
+
+    def overlap(self, rect1, rect2):
+        return not (
+            rect1[2] < rect2[0] or
+            rect1[0] > rect2[2] or
+            rect1[3] < rect2[1] or
+            rect1[1] > rect2[3]
+        )
+
+# Main game
+class FlyOverGame:  # Changed class name for consistency with the new title
+    def __init__(self):
+        self.root = tk.Tk()
+        self.root.title("Fly Over")  # Updated title
+        self.canvas = tk.Canvas(self.root, width=WIDTH, height=HEIGHT, bg="skyblue")
+        self.canvas.pack()
+        self.start_button = None
+        self.restart_button = None
+        self.setup_game()
+        self.show_start_button()
+        self.root.mainloop()
+
+    def setup_game(self):
+        self.canvas.delete("all")
+        self.bird = Bird(self.canvas)
+        self.pipes = []
+        self.score = 0
+        self.game_over = False
+        self.game_completed = False
+        self.canvas.create_text(50, 30, text=f"Score: {self.score}",
+                                fill="white", font=("Arial", 20), tag="score")
+        self.add_decorations()
+
+    def add_decorations(self):
+        # Adding a grassy ground
+        self.canvas.create_rectangle(0, HEIGHT - 50, WIDTH, HEIGHT, fill="forestgreen", outline="")
+        self.canvas.create_text(WIDTH // 2, HEIGHT - 25, text="Grass", fill="lightgreen", font=("Arial", 10))
+        
+        # Adding clouds
+        self.canvas.create_oval(50, 50, 130, 100, fill="white", outline="white")
+        self.canvas.create_oval(250, 80, 330, 130, fill="white", outline="white")
+        
+        # Adding a sun
+        self.canvas.create_oval(320, 20, 370, 70, fill="yellow", outline="orange", width=2)
+
+    def show_start_button(self):
+        self.start_button = tk.Button(self.root, text="Start", font=("Arial", 20),
+                                      command=self.start_game)
+        self.start_button.pack(pady=20)
+
+    def start_game(self):
+        if self.start_button:
+            self.start_button.destroy()
+        self.root.bind("<space>", self.on_space)
+        self.update()
+
+    def on_space(self, event):
+        if not self.game_over and not self.game_completed:
+            self.bird.jump()
+
+    def restart_game(self):
+        if self.restart_button:
+            self.restart_button.destroy()
+        self.setup_game()
+        self.start_game()
+
+    def update(self):
+        if not self.game_over and not self.game_completed:
+            self.game_over = self.bird.update()
+            if len(self.pipes) == 0 or self.pipes[-1].x < WIDTH - 200:
+                self.pipes.append(Pipe(self.canvas))
+            for pipe in self.pipes[:]:
+                if pipe.update():
+                    self.pipes.remove(pipe)
+                if pipe.collides_with(self.bird):
+                    self.game_over = True
+                if not pipe.scored and pipe.x + PIPE_WIDTH < self.bird.x - self.bird.size:
+                    self.score += 1
+                    pipe.scored = True
+                    # Remove pipe immediately after scoring
+                    self.pipes.remove(pipe)
+                    self.canvas.delete(pipe.top_pipe)
+                    self.canvas.delete(pipe.bottom_pipe)
+
+            if self.score >= TARGET_SCORE:
+                self.game_completed = True
+
+            self.canvas.delete("score")
+            self.canvas.create_text(50, 30, text=f"Score: {self.score}",
+                                     fill="white", font=("Arial", 20), tag="score")
+
+            self.root.after(30, self.update)
+        else:
+            self.show_end_message()
+
+    def show_end_message(self):
+        if self.game_completed:
+            text = "Game Completed!"
+            color = "gold"
+        else:
+            text = "Game Over"
+            color = "red"
+        self.canvas.create_text(WIDTH // 2, HEIGHT // 2,
+                                text=text, fill=color, font=("Arial", 40))
+        self.show_restart_button()
+
+    def show_restart_button(self):
+        self.restart_button = tk.Button(self.root, text="Restart", font=("Arial", 20),
+                                        command=self.restart_game)
+        self.restart_button.pack(pady=20)
+
+# Run the game
+FlyOverGame()
